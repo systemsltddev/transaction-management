@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd 
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd">
+		<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="27aa7cc2-44a5-47a3-88d5-e84c0b59fb5d" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<vm:config name="VM_Config" doc:name="VM Config" doc:id="5ca233c4-0f74-49f3-a890-9fa486628348">
+		<vm:queues >
+			<vm:queue queueName="someQueue"/>
+			<vm:queue queueName="errorQueue"/>
+			<vm:queue queueName="someNestedQueue"/>
+		
+</vm:queues>
+	</vm:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="c6e0ea7e-f036-46ac-b907-b57c96d9be56" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Qwer@1234" useXaTransactions="true"/>
+	</db:config>
+	
+	<bti:transaction-manager doc:name="Bitronix Transaction Manager" doc:id="82ec0207-e64a-4599-a4c6-2c38936af349" />
+	<flow name="xa-transaction-http-listener" doc:id="50574d32-fd98-4c06-be9a-c51dc3b825c8" >
+		<http:listener doc:name="GET /" doc:id="1bc1ca2b-0450-4fe8-bd02-86a744f0308a" config-ref="HTTP_Listener_config" path="/"/>
+		<logger level="INFO" doc:name="Flow Started" doc:id="1390396d-26f6-445e-b935-a725f49ccf1a" message="HTTP Listener flow started."/>
+		<vm:publish doc:name="Publish" doc:id="b5bf7be8-b978-44a8-8e46-7f98bc3b0ee3" config-ref="VM_Config" queueName="someQueue"/>
+		<logger level="INFO" doc:name="Flow Ended" doc:id="bef494e2-b4ee-4991-a041-6d01583588a6" message="HTTP Listener flow ended."/>
+	<!-- Other operations -->
+
+</flow>
+	<flow name="xa-transaction-vm-listener-flow" doc:id="1100c07e-c32b-4a23-b0ad-c34d1566408a" >
+		<vm:listener doc:name="Listener" doc:id="c91969d9-e727-4ce0-b9ee-b02161ece466" config-ref="VM_Config" queueName="someQueue" transactionalAction="ALWAYS_BEGIN" transactionType="XA"/>
+		<logger level="INFO" doc:name="Logger" doc:id="0f48b584-5a0e-4aa9-b884-c0d9e372f6dd" message="VM Listener Listner flow started."/>
+					<db:select doc:name="Select Row from Table A" doc:id="4eca7698-f560-440f-ac50-1ae5f56acae0" config-ref="Database_Config" target="data">
+				<db:sql><![CDATA[SELECT * FROM customers.table_a WHERE id = :id]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	id: payload.id
+}]]]></db:input-parameters>
+			</db:select>
+			<choice doc:name="Choice" doc:id="edfdd143-0a0e-4d54-893d-c82eade61ea5" >
+			<when expression="#[!isEmpty (vars.Data)]">
+				<db:delete doc:name="Delete Row from Table A" doc:id="52e3a570-eb1a-442e-b096-bffdf91df29b" config-ref="Database_Config">
+				<db:sql><![CDATA[DELETE FROM customers.table_a WHERE id = :id]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	id: vars.data[0].id 
+}]]]></db:input-parameters>
+			</db:delete>
+				<db:insert doc:name="Insert Row In Table B" doc:id="449b1ca5-bb62-4300-bc03-6520f9e5c53a" config-ref="Database_Config">
+				<db:sql><![CDATA[INSERT INTO customers.table_c (Name,City) VALUES (:name,:city)]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	name: vars.data[0].Name,
+	city: vars.data[0].City
+}]]]></db:input-parameters>
+			</db:insert>
+				<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	message: "Record Inserted."	
+}]' doc:name="Response Payload" doc:id="0ee581e6-9017-406f-8afb-f7dbcf9e301b" />
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="a0f95f43-dd99-4108-a800-306281b18130" message="No Data Found"/>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="Logger" doc:id="66802c2e-a45d-41f1-95fa-e30c6040c1d5" message="VM Listener Listner flow ended."/>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="41f1411a-4a7e-4c59-84e6-98afd32f2ad5" >
+				<logger level="INFO" doc:name="Logger" doc:id="bc3195f9-52ce-40b6-b7bb-f69079742d94" message="Hello from the error handler!" />
+			</on-error-propagate>
+		</error-handler>
+	
+</flow>
+	<flow name="xa-nested-transaction-http-listener" doc:id="bb530fc8-538f-4811-b336-d81364f0fd0f">
+		<http:listener doc:name="GET /" doc:id="f183e49c-b358-47b0-8183-9e5895cdf980" config-ref="HTTP_Listener_config" path="/nested" />
+		<logger level="INFO" doc:name="Flow Started" doc:id="0685d401-ed40-4a59-bb7b-4200fc517382" message="HTTP Listener flow started." />
+		<vm:publish doc:name="Publish" doc:id="0a2c43e0-9d33-457b-9673-1d191de78bae" config-ref="VM_Config" queueName="someNestedQueue" />
+		<logger level="INFO" doc:name="Flow Ended" doc:id="9f364760-34a7-4a12-8698-67277cf17868" message="HTTP Listener flow ended." />
+	<!-- Other operations -->
+
+</flow>
+	<flow name="xa-nested-transaction-flow" doc:id="d6ee0104-dd11-47cf-93a5-2da7086b8683" >
+		<vm:listener doc:name="Listener" doc:id="eb4d9933-2536-47fd-8bbe-310cb396dd29" config-ref="VM_Config" queueName="someNestedQueue" transactionType="XA" transactionalAction="ALWAYS_BEGIN"/>
+	<db:select doc:name="Select Row from Table A" doc:id="566d2ee7-468e-46e4-869d-2b849dcbdbc8" config-ref="Database_Config" target="data">
+				<db:sql><![CDATA[SELECT * FROM customers.table_a WHERE id = :id]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	id: payload.id
+}]]]></db:input-parameters>
+			</db:select>
+			<choice doc:name="Choice" doc:id="e96851d2-ddd7-4ee6-80d0-7ee63e4251f5" >
+			<when expression="#[!isEmpty (vars.Data)]">
+				<try doc:name="Try" doc:id="1713553a-f200-486f-a8ff-f8614712f925" transactionalAction="ALWAYS_BEGIN" transactionType="XA">
+					<db:delete doc:name="Delete Row from Table A" doc:id="0087881c-94a0-4526-b92b-aa9afc6135d2" config-ref="Database_Config">
+				<db:sql><![CDATA[DELETE FROM customers.table_a WHERE id = :id]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	id: vars.data[0].id 
+}]]]></db:input-parameters>
+			</db:delete>
+					<db:insert doc:name="Insert Row In Table B" doc:id="00886306-bfee-46cd-a289-1188b16a0086" config-ref="Database_Config">
+				<db:sql><![CDATA[INSERT INTO customers.table_m (Name,City) VALUES (:name,:city)]]></db:sql>
+				<db:input-parameters><![CDATA[#[{
+	name: vars.data[0].Name,
+	city: vars.data[0].City
+}]]]></db:input-parameters>
+			</db:insert>
+					<error-handler >
+						<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="ffe12ed5-ccd4-47e5-8216-ddb2afeee6e3" >
+							<logger level="INFO" doc:name="Logger" doc:id="f58ed616-3141-4f9a-b32e-38c12e267aab" message="Error occured in nested try scope." />
+							<flow-ref doc:name="Nested Error Handler Flow" doc:id="e11ce1c1-6038-402e-bb25-b9a15cbed2e5" name="nested-error-handler-flow" />
+						</on-error-propagate>
+					</error-handler>
+				</try>
+				<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	message: "Record Inserted."	
+}]' doc:name="Response Payload" doc:id="f5739123-6a51-491c-8226-5f925db0374e" />
+			
+</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="9555a8d1-0d4f-4715-b600-b5f461e89119" message="No Data Found"/>
+			</otherwise>
+		</choice>
+		<logger level="INFO" doc:name="Logger" doc:id="ef336876-b2e3-4c5f-994b-14f155392630" message="VM Listener Listner flow ended."/>
+	
+	</flow>
+	<sub-flow name="nested-error-handler-flow" doc:id="fdd57962-6d53-489e-8134-52264775d7df" >
+		<logger level="INFO" doc:name="Logger" doc:id="7cf0303d-ddc3-4072-aff4-31a27117d2da" message="Nested Error Handler Flow started."/>
+		<logger level="INFO" doc:name="Logger" doc:id="4d3a4fd6-e46e-4e02-a811-e9d33f0385a2" message="#[payload]"/>
+		<vm:publish doc:name="Publish" doc:id="5bc66084-3d4e-4ac6-9004-4638be8e8075" config-ref="VM_Config" queueName="errorQueue"/>
+	</sub-flow>
+	<flow name="error-queue-processing-flow" doc:id="0d84592b-5ed5-4a54-ada1-eb05dcfd5a8b" >
+		<vm:listener doc:name="Listener" doc:id="2049df9b-9389-40b8-abac-16ead62f685a" config-ref="VM_Config" queueName="errorQueue"/>
+		<logger level="INFO" doc:name="Logger" doc:id="328b5c80-7513-48c7-9651-412751f56e8c" message="#[payload]"/>
+		<logger level="INFO" doc:name="Logger" doc:id="7d0bbccd-28a6-4cb9-91c7-12a9f9fa1eb5" message="Implement Error Logic."/>
+	</flow>
+	
+	
+</mule>

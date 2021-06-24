@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:jms="http://www.mulesoft.org/schema/mule/jms"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="aaf9f52d-de61-427b-bcc7-bf208c78a19d" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<vm:config name="VM_Config" doc:name="VM Config" doc:id="213ca7f1-57f3-482c-8b67-4d6b468ae783">
+		<vm:queues >
+			<vm:queue queueName="someQueue" queueType="PERSISTENT" />
+		</vm:queues>
+	</vm:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="31c8911b-d2b9-4625-b6bd-d09c57a37c21" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="Qwer@1234" />
+	</db:config>
+	<flow name="single-resource-transactionFlow" doc:id="6028ff29-f2ed-4eac-8224-56f07af5e640" >
+		<http:listener doc:name="POST / Insert" doc:id="915faa54-5883-499c-8841-589033588381" config-ref="HTTP_Listener_config" path="/insert" allowedMethods="POST"/>
+		<logger level="INFO" doc:name="Flow Started" doc:id="03c95e26-9a9d-4845-bea9-43f516e9edc7" message="HTTP Listener flow started."/>
+		<try doc:name="Try" doc:id="7fd850c0-6d58-4314-8be8-40d3e7c9e10b" transactionalAction="ALWAYS_BEGIN">
+			<db:insert doc:name="Insert" doc:id="0934ba02-af3a-409e-a678-ed742d0237b7" config-ref="Database_Config">
+					<db:sql><![CDATA[INSERT INTO customers.table_a (Name,City) VALUES (:name,:city)]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+	name: payload.Name,
+	city: payload.City
+}]]]></db:input-parameters>
+				</db:insert>
+			<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	message: "Record Inserted."	
+}]' doc:name="Set Payload" doc:id="8a5eef61-3d83-42ec-97a3-2d37161b5824" />
+		</try>
+		<logger level="INFO" doc:name="Flow Ended" doc:id="ea1a733f-67fa-40b7-8000-8e521921e077" message="HTTP Listener flow ended."/>
+	</flow>
+	<flow name="single-resource-transaction-http-listener" doc:id="276f8f9d-2d3d-476c-b77d-4e32a8167a6a" >
+		<http:listener doc:name="GET /" doc:id="95c0b7b7-e9fb-424b-9131-b213127342c1" config-ref="HTTP_Listener_config" path="/"/>
+		<logger level="INFO" doc:name="Flow Started" doc:id="9ec2887c-e0ae-4a00-890c-a175c05438d8" message="HTTP Listener flow started."/>
+		<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	message: "Hello world."	
+}]' doc:name="Set Payload" doc:id="1dae4c6f-8660-4384-8db8-87d9b39813ae" />
+		<vm:publish doc:name="Publish" doc:id="88cc099d-f717-4b57-9e11-38431d6bb86e" config-ref="VM_Config" queueName="someQueue"/>
+		<logger level="INFO" doc:name="Flow Ended" doc:id="1b6ea8a2-404b-4bbe-832d-a37858c2324d" message="HTTP Listener flow ended."/>
+	<!-- Other operations -->
+
+</flow>
+	<flow name="single-resource-transaction-vm-listener-flow" doc:id="672c60bb-394e-4ca7-9ea7-4b4b396002be" >
+		<vm:listener doc:name="Listener" doc:id="39393e1b-093d-49db-81ba-4d943b8441e3" config-ref="VM_Config" queueName="someQueue" transactionalAction="ALWAYS_BEGIN"/>
+		<logger level="INFO" doc:name="Logger" doc:id="31597e41-cd41-4c1e-8bcb-08b2f482b6b0" message="VM Listener Listner flow started."/>
+		<set-payload value='#[%dw 2.0
+output application/json
+---
+{
+	message: "Hello from the VM." ++ payload[100]
+}]' doc:name="Set Payload" doc:id="b461eab1-1cd7-44be-af34-43f5c2e78c83" />
+		<logger level="INFO" doc:name="Logger" doc:id="74f62740-880e-4a5d-a66a-6c43ec5420cb" message="VM Listener Listner flow ended."/>
+	</flow>
+	
+</mule>
